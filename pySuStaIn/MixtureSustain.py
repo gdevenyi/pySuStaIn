@@ -630,7 +630,7 @@ class MixtureSustain(AbstractSustain):
 
     @staticmethod
     def calc_coeff(sig):
-        return 1. / np.sqrt(np.pi * 2.0) * sig
+        return 1. / (np.sqrt(np.pi * 2.0) * sig)
 
     @staticmethod
     def calc_exp(x, mu, sig):
