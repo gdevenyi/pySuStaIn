@@ -557,11 +557,12 @@ class MixtureSustain(AbstractSustain):
                 this_samples_sequence = samples_sequence[subtype_order[i],:,:].T
                 N = this_samples_sequence.shape[1]
 
-                # Construct confusion matrix (vectorized)
+                # Construct confusion matrix (vectorized, with np.bincount so that no
+                # N x n_samples x N temporary array is needed)
                 # We compare `this_samples_sequence` against each position
                 # Sum each time it was observed at that point in the sequence
                 # And normalize for number of samples/sequences
-                confus_matrix = (this_samples_sequence==np.arange(N)[:, None, None]).sum(1) / this_samples_sequence.shape[0]
+                confus_matrix = np.bincount((this_samples_sequence.astype(int) * N + np.arange(N)).ravel(), minlength=N * N).reshape(N, N) / this_samples_sequence.shape[0]
 
                 if subtype_titles is not None:
                     title_i = subtype_titles[i]
