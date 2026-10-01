@@ -1135,9 +1135,11 @@ class AbstractSustain(ABC):
         # The likelihood of each subject is sum_s f_s * (sum over stages of the stage
         # likelihoods of subtype s). MCMC samples repeat the same sequences many
         # times, so compute the sum over stages once for each distinct sequence
-        # (at most about 256 MB in total; the oldest entries are removed first)
+        # (at most about 256 MB in total, including the keys; the oldest entries are
+        # removed first, and nothing is cached if one entry does not fit)
         p_perm_k_stage_sum_cache            = [{} for s in range(N_S)]
-        cache_max_entries                   = max(1, int(256e6 / (8 * M * N_S)))
+        cache_entry_bytes                   = 8 * M + samples_sequence.shape[1] * samples_sequence.itemsize
+        cache_max_entries                   = int(256e6 / (cache_entry_bytes * N_S))
         p_perm_k_stage_sum                  = np.zeros((M, N_S))
         for i in range(n_iterations):
             S                               = samples_sequence[:, :, i]
@@ -1146,11 +1148,14 @@ class AbstractSustain(ABC):
             # same as self._calculate_likelihood(sustainData, S, f)[1], up to roundoff
             for s in range(N_S):
                 key                         = S[s].tobytes()
-                if key not in p_perm_k_stage_sum_cache[s]:
+                if key in p_perm_k_stage_sum_cache[s]:
+                    p_perm_k_stage_sum[:, s] = p_perm_k_stage_sum_cache[s][key]
+                    continue
+                p_perm_k_stage_sum[:, s]    = np.sum(self._calculate_likelihood_stage(sustainData, S[s]), 1)
+                if cache_max_entries > 0:
                     if len(p_perm_k_stage_sum_cache[s]) >= cache_max_entries:
                         del p_perm_k_stage_sum_cache[s][next(iter(p_perm_k_stage_sum_cache[s]))]
-                    p_perm_k_stage_sum_cache[s][key] = np.sum(self._calculate_likelihood_stage(sustainData, S[s]), 1)
-                p_perm_k_stage_sum[:, s]    = p_perm_k_stage_sum_cache[s][key]
+                    p_perm_k_stage_sum_cache[s][key] = p_perm_k_stage_sum[:, s].copy()
 
             samples_likelihood_subj[:, i]   = p_perm_k_stage_sum @ f
 
