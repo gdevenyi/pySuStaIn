@@ -331,7 +331,9 @@ class ZscoreSustain(AbstractSustain):
                     possible_positions      = np.arange(move_event_to_lower_bound, move_event_to_upper_bound)
                 possible_sequences          = np.zeros((len(possible_positions), N))
                 possible_likelihood         = np.zeros((len(possible_positions), 1))
-                possible_p_perm_k           = np.zeros((M, N + 1, len(possible_positions)))
+                # keep only the p_perm_k of the best candidate so far, not of every
+                # candidate, which needs M x (N+1) x len(possible_positions) memory
+                best_p_perm_k               = None
                 for index in range(len(possible_positions)):
                     current_sequence        = S_opt[s]
 
@@ -343,19 +345,23 @@ class ZscoreSustain(AbstractSustain):
                     new_sequence            = np.concatenate([current_sequence[np.arange(move_event_to)], [selected_event], current_sequence[np.arange(move_event_to, N - 1)]])
                     possible_sequences[index, :] = new_sequence
 
-                    possible_p_perm_k[:, :, index] = self._calculate_likelihood_stage(sustainData, new_sequence)
+                    this_p_perm_k           = self._calculate_likelihood_stage(sustainData, new_sequence)
 
-                    p_perm_k_stage_sum[:, s] = np.sum(possible_p_perm_k[:, :, index], 1)
+                    p_perm_k_stage_sum[:, s] = np.sum(this_p_perm_k, 1)
                     total_prob_subj         = p_perm_k_stage_sum @ f_opt_vec
                     possible_likelihood[index] = np.sum(np.log(total_prob_subj + 1e-250))
+
+                    # the first of equal maxima is selected below, so replace only on a strict increase
+                    if best_p_perm_k is None or possible_likelihood[index] > possible_likelihood[best_index]:
+                        best_index          = index
+                        best_p_perm_k       = this_p_perm_k
 
                 possible_likelihood         = possible_likelihood.reshape(possible_likelihood.shape[0])
                 max_likelihood              = max(possible_likelihood)
                 this_S                      = possible_sequences[possible_likelihood == max_likelihood, :]
                 this_S                      = this_S[0, :]
                 S_opt[s]                    = this_S
-                this_p_perm_k               = possible_p_perm_k[:, :, possible_likelihood == max_likelihood]
-                p_perm_k[:, :, s]           = this_p_perm_k[:, :, 0]
+                p_perm_k[:, :, s]           = best_p_perm_k
                 p_perm_k_stage_sum[:, s]    = np.sum(p_perm_k[:, :, s], 1)
 
             S_opt[s]                        = this_S
