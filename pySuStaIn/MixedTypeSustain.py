@@ -855,7 +855,7 @@ class MixedTypeSustain(AbstractSustain):
 
                 this_samples_sequence = samples_sequence[subtype_order[subtype_idx], :, :].T
                 N = this_samples_sequence.shape[1]
-                confus_matrix = (this_samples_sequence == np.arange(N)[:, None, None]).sum(1) / this_samples_sequence.shape[0]
+                confus_matrix = np.bincount((this_samples_sequence.astype(int) * N + np.arange(N)).ravel(), minlength=N * N).reshape(N, N) / this_samples_sequence.shape[0]
                 confus_matrix_c = np.ones((N_bio, N, 3))
 
                 for j, score_mask in enumerate(score_masks):
