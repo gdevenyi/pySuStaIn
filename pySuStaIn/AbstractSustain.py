@@ -67,9 +67,9 @@ class AbstractSustainData(ABC):
 #*******************************************
 class AbstractSustain(ABC):
 
-    # Number of MCMC iterations in each pass, and number of passes, used to tune
-    # the MCMC proposal widths before the main MCMC run. Set these on an instance
-    # before run_sustain_algorithm to change them
+    # Number of MCMC iterations in each pass (at least 2), and number of passes
+    # (0 to skip the tuning), used to tune the MCMC proposal widths before the main
+    # MCMC run. Set these on an instance before run_sustain_algorithm to change them
     N_iterations_MCMC_optimisation      = int(1e4)
     N_passes_MCMC_optimisation          = 3
 
@@ -1071,6 +1071,13 @@ class AbstractSustain(ABC):
         n_iterations_MCMC_optimisation      = int(self.N_iterations_MCMC_optimisation)
 
         n_passes_optimisation               = int(self.N_passes_MCMC_optimisation)
+
+        # 0 passes skips the tuning and uses the starting widths below. Each pass
+        # needs at least 2 iterations to estimate the widths (np.std with ddof=1)
+        if n_passes_optimisation < 0:
+            raise ValueError(f"N_passes_MCMC_optimisation must be 0 or more, not {n_passes_optimisation}")
+        if n_passes_optimisation > 0 and n_iterations_MCMC_optimisation < 2:
+            raise ValueError(f"N_iterations_MCMC_optimisation must be 2 or more, not {n_iterations_MCMC_optimisation}")
 
         seq_sigma_currentpass               = 1
         f_sigma_currentpass                 = 0.01  # magic number
