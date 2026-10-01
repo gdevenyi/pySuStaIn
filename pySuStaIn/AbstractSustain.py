@@ -110,6 +110,8 @@ class AbstractSustain(ABC):
                 n_jobs                  = len(os.sched_getaffinity(0))
             except AttributeError:
                 n_jobs                  = multiprocessing.cpu_count()
+        elif isinstance(n_jobs, bool) or not isinstance(n_jobs, (int, np.integer)) or n_jobs < 1:
+            raise ValueError(f"n_jobs must be a positive integer or None, not {n_jobs!r}")
         self.num_cores                  = n_jobs
 
         self.output_folder              = output_folder
