@@ -561,7 +561,12 @@ class OrdinalSustain(AbstractSustain):
                 # We compare `this_samples_sequence` against each position
                 # Sum each time it was observed at that point in the sequence
                 # And normalize for number of samples/sequences
-                confus_matrix = np.bincount((this_samples_sequence.astype(int) * N + np.arange(N)).ravel(), minlength=N * N).reshape(N, N) / this_samples_sequence.shape[0]
+                # event * N + position for each sample, in one integer array that is
+                # built in place and flattened in its memory order (no copies)
+                event_position = this_samples_sequence.astype(np.intp)
+                event_position *= N
+                event_position += np.arange(N)
+                confus_matrix = np.bincount(event_position.ravel(order='K'), minlength=N * N).reshape(N, N) / this_samples_sequence.shape[0]
 
                 # Define the confusion matrix to insert the colours
                 # Use 1s to start with all white
