@@ -582,11 +582,13 @@ class AbstractSustain(ABC):
         # number of samples at the end. Consecutive MCMC samples often have the same
         # sequences, and the stage likelihoods depend only on the sequences (not on
         # f). So keep the stage likelihoods of recent sequences of each subtype (at
-        # most about 512 MB in total; the oldest entries are removed first), and add
+        # most about 512 MB in total, including the keys; the oldest entries are
+        # removed first, and nothing is cached if one entry does not fit), and add
         # the contribution to prob_subtype_stage once for each run of samples with
         # the same sequences
         p_perm_k_cache                      = [{} for s in range(N_S)]
-        cache_max_entries                   = max(1, int(512e6 / (8 * nSamples * (nStages + 1) * N_S)))
+        cache_entry_bytes                   = 8 * nSamples * (nStages + 1) + samples_sequence.shape[1] * samples_sequence.itemsize
+        cache_max_entries                   = int(512e6 / (cache_entry_bytes * N_S))
         p_perm_k                            = np.zeros((nSamples, nStages + 1, N_S))
         p_perm_k_stage_sum                  = np.zeros((nSamples, N_S))
         current_keys                        = None
@@ -608,11 +610,14 @@ class AbstractSustain(ABC):
                 if keys is None:
                     break
                 for s in range(N_S):
-                    if keys[s] not in p_perm_k_cache[s]:
+                    if keys[s] in p_perm_k_cache[s]:
+                        p_perm_k[:, :, s]   = p_perm_k_cache[s][keys[s]]
+                        continue
+                    p_perm_k[:, :, s]       = self._calculate_likelihood_stage(sustainData, this_S[s])
+                    if cache_max_entries > 0:
                         if len(p_perm_k_cache[s]) >= cache_max_entries:
                             del p_perm_k_cache[s][next(iter(p_perm_k_cache[s]))]
-                        p_perm_k_cache[s][keys[s]] = self._calculate_likelihood_stage(sustainData, this_S[s])
-                    p_perm_k[:, :, s]       = p_perm_k_cache[s][keys[s]]
+                        p_perm_k_cache[s][keys[s]] = p_perm_k[:, :, s].copy()
                 p_perm_k_stage_sum          = np.sum(p_perm_k, 1)
                 current_keys                = keys
                 run_length                  = 0
