@@ -633,11 +633,6 @@ class OrdinalSustain(AbstractSustain):
                         confus_matrix_score.reshape((stage_score==z).sum(), N, 1),
                         (1, 1, alter_level.sum())
                     )
-                    # Subtract the certainty for this colour
-                    confus_matrix_c[:, :, alter_level] -= np.tile(
-                        confus_matrix_score.reshape(N_bio, N, 1),
-                        (1, 1, alter_level.sum())
-                    )
                 if subtype_titles is not None:
                     title_i = subtype_titles[i]
                 else:
