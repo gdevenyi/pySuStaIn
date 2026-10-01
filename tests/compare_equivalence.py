@@ -20,13 +20,15 @@ Usage:
         --new /path/to/new/checkout --seeds 10 --out equivalence_results
 
 Each checkout is put first on PYTHONPATH of a separate process, so the two
-versions never share an interpreter.
+versions never share an interpreter. The synthetic data is generated once,
+with the reference checkout, and both versions fit the same data.
 """
 
 import argparse
 import itertools
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -72,9 +74,9 @@ def run_one(args):
 
     import pySuStaIn
 
-    data, Z_vals, Z_max, gt_sequences, gt_subtypes = simulate(
-        args.n_biomarkers, args.n_samples, args.n_subtypes, args.data_seed
-    )
+    d = np.load(args.data_file)
+    data, Z_vals, Z_max = d["data"], d["Z_vals"], d["Z_max"]
+    gt_sequences, gt_subtypes = d["gt_sequences"], d["gt_subtypes"]
     out = Path(args.run_dir)
     out.mkdir(parents=True, exist_ok=True)
     model = pySuStaIn.ZscoreSustain(
@@ -101,6 +103,31 @@ def run_one(args):
         summary[f"ml_subtype_{s}"] = np.asarray(v["ml_subtype"]).ravel()
     np.savez(out / "summary.npz", **summary)
     print(f"Saved {out / 'summary.npz'}")
+
+
+def make_data(args):
+    """Generate the synthetic data with the pySuStaIn on sys.path, and save it."""
+    data, Z_vals, Z_max, gt_sequences, gt_subtypes = simulate(
+        args.n_biomarkers, args.n_samples, args.n_subtypes, args.data_seed
+    )
+    np.savez(
+        args.make_data,
+        data=data,
+        Z_vals=Z_vals,
+        Z_max=Z_max,
+        gt_sequences=gt_sequences,
+        gt_subtypes=gt_subtypes,
+    )
+
+
+def git_head(path):
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() or None
 
 
 def ml_sequences(summary, s):
@@ -204,11 +231,16 @@ def main():
     parser.add_argument("--data-seed", type=int, default=42)
     parser.add_argument("--parallel", action="store_true")
     parser.add_argument("--compare-only", action="store_true")
-    # Internal: fit one model in this process
+    # Internal: generate the data, or fit one model, in this process
+    parser.add_argument("--make-data", help=argparse.SUPPRESS)
+    parser.add_argument("--data-file", help=argparse.SUPPRESS)
     parser.add_argument("--run-dir", help=argparse.SUPPRESS)
     parser.add_argument("--seed", type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
+    if args.make_data:
+        make_data(args)
+        return
     if args.run_dir:
         run_one(args)
         return
@@ -216,6 +248,26 @@ def main():
     if not args.compare_only:
         if not (args.ref and args.new):
             parser.error("--ref and --new are required unless --compare-only")
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        params = {
+            k: v
+            for k, v in vars(args).items()
+            if k not in ("compare_only", "make_data", "data_file", "run_dir", "seed")
+        }
+        params["ref"] = str(Path(args.ref).resolve())
+        params["new"] = str(Path(args.new).resolve())
+        params["ref_head"] = git_head(args.ref)
+        params["new_head"] = git_head(args.new)
+        manifest = out / "manifest.json"
+        if manifest.exists() and json.loads(manifest.read_text()) != params:
+            sys.exit(
+                f"{out} holds results of another comparison (see {manifest}); "
+                "use a new --out directory or delete it"
+            )
+        manifest.write_text(json.dumps(params, indent=2))
+
+        data_file = out / "data.npz"
         forwarded = [
             f"--n-biomarkers={args.n_biomarkers}",
             f"--n-samples={args.n_samples}",
@@ -225,12 +277,22 @@ def main():
             f"--n-mcmc={args.n_mcmc}",
             f"--data-seed={args.data_seed}",
         ] + (["--parallel"] if args.parallel else [])
+        if not data_file.exists():
+            env = dict(os.environ, PYTHONPATH=params["ref"])
+            subprocess.run(
+                [sys.executable, __file__, f"--make-data={data_file}"] + forwarded,
+                env=env,
+                check=True,
+            )
+        forwarded.append(f"--data-file={data_file}")
         for version, path in (("ref", args.ref), ("new", args.new)):
             env = dict(os.environ, PYTHONPATH=str(Path(path).resolve()))
             for seed in range(args.seeds):
                 run_dir = Path(args.out) / version / f"seed{seed}"
                 if (run_dir / "summary.npz").exists():
                     continue
+                # never reuse the pickles of an incomplete earlier run
+                shutil.rmtree(run_dir, ignore_errors=True)
                 subprocess.run(
                     [sys.executable, __file__, f"--run-dir={run_dir}", f"--seed={seed}"]
                     + forwarded,
