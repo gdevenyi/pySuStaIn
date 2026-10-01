@@ -67,6 +67,12 @@ class AbstractSustainData(ABC):
 #*******************************************
 class AbstractSustain(ABC):
 
+    # Number of MCMC iterations in each pass, and number of passes, used to tune
+    # the MCMC proposal widths before the main MCMC run. Set these on an instance
+    # before run_sustain_algorithm to change them
+    N_iterations_MCMC_optimisation      = int(1e4)
+    N_passes_MCMC_optimisation          = 3
+
     def __init__(self,
                  sustainData,
                  N_startpoints,
@@ -1013,9 +1019,9 @@ class AbstractSustain(ABC):
     def _optimise_mcmc_settings(self, sustainData, seq_init, f_init):
 
         # Optimise the perturbation size for the MCMC algorithm
-        n_iterations_MCMC_optimisation      = int(1e4)  # FIXME: set externally
+        n_iterations_MCMC_optimisation      = int(self.N_iterations_MCMC_optimisation)
 
-        n_passes_optimisation               = 3
+        n_passes_optimisation               = int(self.N_passes_MCMC_optimisation)
 
         seq_sigma_currentpass               = 1
         f_sigma_currentpass                 = 0.01  # magic number
