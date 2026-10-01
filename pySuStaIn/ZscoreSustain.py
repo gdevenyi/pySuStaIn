@@ -368,9 +368,11 @@ class ZscoreSustain(AbstractSustain):
         tqdm_update_iters = int(n_iterations/1000) if n_iterations > 100000 else None 
 
         # Most proposals leave the sequence of a subtype unchanged, so keep the
-        # stage likelihoods of the current and proposed sequence of each subtype
+        # stage likelihoods of the current and proposed sequence of each subtype.
+        # The likelihood only needs their sum over stages, so keep only that
         M                                   = sustainData.getNumSamples()
         p_perm_k_cache                      = [{} for s in range(N_S)]
+        p_perm_k_stage_sum                  = np.zeros((M, N_S))
 
         for i in tqdm(range(n_iterations), "MCMC Iteration", n_iterations, miniters=tqdm_update_iters):
             if i > 0:
@@ -435,15 +437,14 @@ class ZscoreSustain(AbstractSustain):
 
             S                               = samples_sequence[:, :, i]
             f                               = samples_f[:, i]
-            # same as self._calculate_likelihood(sustainData, S, f), but reuses the
-            # stage likelihoods of sequences that are in the cache
-            p_perm_k                        = np.zeros((M, N + 1, N_S))
+            # same as self._calculate_likelihood(sustainData, S, f) up to roundoff,
+            # but reuses the stage sums of sequences that are in the cache
             for s in range(N_S):
                 key                         = S[s].tobytes()
                 if key not in p_perm_k_cache[s]:
-                    p_perm_k_cache[s][key]  = self._calculate_likelihood_stage(sustainData, S[s])
-                p_perm_k[:, :, s]           = p_perm_k_cache[s][key]
-            total_prob_subj                 = np.sum(np.sum(p_perm_k * f.reshape(1, 1, N_S), 2), 1)
+                    p_perm_k_cache[s][key]  = np.sum(self._calculate_likelihood_stage(sustainData, S[s]), 1)
+                p_perm_k_stage_sum[:, s]    = p_perm_k_cache[s][key]
+            total_prob_subj                 = p_perm_k_stage_sum @ f
             likelihood_sample               = np.sum(np.log(total_prob_subj + 1e-250))
             samples_likelihood[i]           = likelihood_sample
 
